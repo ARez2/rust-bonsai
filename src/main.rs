@@ -32,8 +32,8 @@ fn main() {
             // It's guaranteed that the `read()` won't block when the `poll()`
             // function returns `true`
             match read().unwrap() {
-                Event::FocusGained => println!("FocusGained"),
-                Event::FocusLost => println!("FocusLost"),
+                // Event::FocusGained => println!("FocusGained"),
+                // Event::FocusLost => println!("FocusLost"),
                 Event::Key(event) => {
                     match event.code {
                         KeyCode::Esc => break,
@@ -41,10 +41,10 @@ fn main() {
                         _ => println!("{:?}", event),
                     }
                 },
-                Event::Mouse(event) => println!("{:?}", event),
-                #[cfg(feature = "bracketed-paste")]
-                Event::Paste(data) => println!("Pasted {:?}", data),
-                Event::Resize(width, height) => println!("New size {}x{}", width, height),
+                // Event::Mouse(event) => println!("{:?}", event),
+                // #[cfg(feature = "bracketed-paste")]
+                // Event::Paste(data) => println!("Pasted {:?}", data),
+                // Event::Resize(width, height) => println!("New size {}x{}", width, height),
                 _ => (),
             }
         } else {
