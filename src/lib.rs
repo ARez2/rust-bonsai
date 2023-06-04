@@ -13,8 +13,6 @@ use appearance::{TreeAppearance, LeafType, BranchShape, BaseType};
 
 const BROWN: Color = Color::Rgb {r: 142, g: 44, b: 19};
 const ROSE: Color = Color::Rgb { r: 252, g: 212, b: 251 };
-const NORMAL_LEAVES: [&'static str; 4] = ["V", "W", "VW", "WVW"];
-const ROUND_LEAVES: [&'static str; 3] = ["&", "o", "0"];
 type Writer = Stdout;
 pub type RNG = ChaCha8Rng;
 
@@ -31,6 +29,7 @@ pub struct BonsaiTree {
 }
 
 impl BonsaiTree {
+    /// Creates a new randomized tree with the given values
     pub fn new(noise: NoiseConfig, mut rng: RNG, stdout: Writer, width: i16, height: i16, trunk_width: u8) -> BonsaiTree {
         let appearance = TreeAppearance::randomize(&mut rng, trunk_width);
         BonsaiTree {
@@ -46,6 +45,8 @@ impl BonsaiTree {
         }
     }
 
+
+    /// Starts the growing of the tree
     pub fn grow(&mut self) {
         let baseheight = self.draw_base();
         self.grow_trunk(baseheight);
@@ -53,6 +54,8 @@ impl BonsaiTree {
         self.flush();
     }
 
+
+    /// Helper function to draw the trunk
     pub fn grow_trunk(&mut self, baseheight: usize) {
         let w = self.appearance.trunk_width;
         // Center the tree trunk in the horizontal axis and above the base (plant pot)
@@ -60,6 +63,8 @@ impl BonsaiTree {
         self.grow_branch(start, Direction::Up, w, self.appearance.trunk_shape);
     }
 
+
+    /// Helper function to draw all the other branches
     pub fn grow_branches(&mut self) {
         if self.branches.is_empty() {
             return;
@@ -95,6 +100,8 @@ impl BonsaiTree {
     }
 
 
+    /// The core of the program. Basically every part of the bonsai tree is handled as a branch
+    /// with a direction (even the trunk)
     pub fn grow_branch(
         &mut self,
         start_pos: Point<i16>,
@@ -135,6 +142,7 @@ impl BonsaiTree {
     }
 
 
+    /// Grows/ draws a bunch of leaves at the last few points of a branch
     pub fn grow_leaves(&mut self, branch: &BonsaiBranch) {
         let mut positions: Vec<Point<i16>> = branch.steps.iter()
             .filter_map(|step| Some(step.pos))
@@ -147,14 +155,11 @@ impl BonsaiTree {
             leaf_positions.push(pos.clone());
         };
         for pos in leaf_positions.iter().rev() {
-            let leaf = match self.appearance.leaf_type {
-                LeafType::Normal => NORMAL_LEAVES.choose(&mut self.rng).unwrap(),
-                LeafType::Round => ROUND_LEAVES.choose(&mut self.rng).unwrap(),
-            };
+            let leaf = &self.appearance.get_leaf_string(&mut self.rng);
 
             self.draw((pos.x as u16, pos.y as u16), leaf, self.appearance.leaf_color);
             let num_leaves = self.rng.gen_range(5..=10+(3 * self.appearance.trunk_width_bonus));
-            for i in 0..num_leaves {
+            for _ in 0..num_leaves {
                 let rand_x = self.rng.gen_range(-self.appearance.leafshape_x.x..=self.appearance.leafshape_x.y);
                 let rand_y = self.rng.gen_range(-self.appearance.leafshape_y.x..=self.appearance.leafshape_y.y);
                 let mut new_pos = *pos + Point::from((rand_x, rand_y));
@@ -168,6 +173,7 @@ impl BonsaiTree {
     }
 
 
+    /// Depending on the direction, returns a string the looks like the direction
     pub fn get_string_for_dir(&mut self, mut dir: (i16, i16), width: u8) -> String {
         dir.0 = std::cmp::max(std::cmp::min(1, dir.0), -1);
         dir.1 = std::cmp::max(std::cmp::min(1, dir.1), -1);
@@ -195,6 +201,7 @@ impl BonsaiTree {
     }
 
 
+    /// Uses the direction to draw the step of a branch
     fn draw_step(&mut self, step: &BonsaiStep, direction: Direction) {
         let what = self.get_string_for_dir( step.diff, step.width);
         if direction != Direction::Up && step.width <= 1 {
@@ -205,6 +212,7 @@ impl BonsaiTree {
     }
 
 
+    /// Helper function to draw anything on the screen at a specified position
     pub fn draw(&mut self, pos: (u16, u16), what: &str, mut color: Color) {
         let rainbow_col = Color::Rgb { r: 1, g: 1, b: 1 };
         if color == rainbow_col {
@@ -218,6 +226,7 @@ impl BonsaiTree {
     }
 
 
+    /// Actually renders the string returned by `generate_base()`
     pub fn draw_base(&mut self) -> usize {
         let data = self.generate_base();
         let data_split: Vec<&str> = data.split('\n').collect();
@@ -251,6 +260,8 @@ impl BonsaiTree {
     }
 
 
+
+    /// Generates a string that is used to draw the base (plant pot)
     pub fn generate_base(&self) -> String {
         let borders = [('\\', '/'), ('(', ')')];
         let border = match self.appearance.base {
@@ -276,12 +287,14 @@ impl BonsaiTree {
     }
 
 
+    /// Helper function to flush the screen
     pub fn flush(&mut self) {
         self.stdout.flush().unwrap();
     }
 }
 
 
+/// Equivalent of pythons `print("s" * 10)`
 pub fn stretched_str(string: char, len: usize) -> String {
     let mut data = String::new();
     for _ in 0..len {

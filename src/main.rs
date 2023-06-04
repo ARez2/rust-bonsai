@@ -55,6 +55,7 @@ fn main() {
 }
 
 
+/// Sets up the growth of a new bonsai tree
 fn grow_bonsai(args: Args) {
     let stdout = std::io::stdout();
     let mut rng = rand::thread_rng();

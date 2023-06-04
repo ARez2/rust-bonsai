@@ -3,7 +3,7 @@ use rand::{Rng};
 use simple_simplex::NoiseConfig;
 
 
-
+/// Direction of a branch
 #[derive(Debug, Clone, PartialEq)]
 pub enum Direction {
     Up,
@@ -12,6 +12,7 @@ pub enum Direction {
 }
 
 
+/// Defines a step the branch has taken. This is used for drawing
 #[derive(Clone)]
 pub struct BonsaiStep {
     /// Current position of the step
@@ -29,6 +30,7 @@ pub struct BonsaiBranch {
 }
 
 impl BonsaiBranch {
+    /// Creates a new bonsai branch
     pub fn new(start_pos: Point<i16>, direction: Direction, start_width: u8) -> BonsaiBranch {
         BonsaiBranch {
             steps: vec![
@@ -42,6 +44,10 @@ impl BonsaiBranch {
         }
     }
 
+
+    /// Handles a single step of a branch. Uses the last step and given arguments
+    /// to define the next BonsaiStep's width and position
+    /// returns if it was able to grow
     pub fn step(&mut self, noise: &NoiseConfig, rng: &mut RNG, mut chance_to_loose_width: f32, height_ratio: f32) -> bool {
         let last_step = self.steps.last().unwrap();
         if last_step.width < 1 {

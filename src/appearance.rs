@@ -1,9 +1,11 @@
 use crossterm::style::Color;
 use rand::{seq::SliceRandom, Rng};
 
+
 use crate::{point::Point, RNG, ROSE};
 
 
+/// Types of bases
 #[derive(Clone, Copy)]
 pub enum BaseType {
     LargePot,
@@ -11,12 +13,15 @@ pub enum BaseType {
 }
 
 
+/// Type of leaves. See get_leaf_string()
 #[derive(Clone, Copy)]
 pub enum LeafType {
-    Normal,
+    Pointy,
     Round,
 } 
 
+
+/// Defines how a branch looks
 #[derive(Clone, Copy)]
 pub struct BranchShape {
     /// initial chance to loose width
@@ -28,13 +33,14 @@ pub struct BranchShape {
 }
 
 
+/// Defines the appearance of a bonsai tree.
 pub struct TreeAppearance {
     /// How far the leaves extend from the back of a branch
     pub leaf_count: u8,
     /// Which character to use for the leaf
     pub leaf_type: LeafType,
     pub leaf_color: Color,
-    // The random extents of the leaves in x dir (x = min, y = max)
+    /// The random extents of the leaves in x dir (x = min, y = max)
     pub leafshape_x: Point<i16>,
     // The random extents of the leaves in y dir (x = min, y = max)
     pub leafshape_y: Point<i16>,
@@ -56,11 +62,11 @@ impl TreeAppearance {
         let trunk_width_bonus = (trunk_width as f32 / 5.0 as f32).round() as i16;
 
         let leaf_type = [
-            LeafType::Normal,
+            LeafType::Pointy,
             LeafType::Round,
             ].choose(rng).unwrap().clone();
         let (leafshape_x, leafshape_y) = match leaf_type {
-            LeafType::Normal => {
+            LeafType::Pointy => {
                 let sidewards = rng.gen_range(1..=3) + trunk_width_bonus;
                 (Point::from((sidewards, sidewards)), Point::from((1 + trunk_width_bonus, 0)))
             },
@@ -95,6 +101,15 @@ impl TreeAppearance {
             trunk_width,
             trunk_width_bonus,
             base: *[BaseType::LargePot, BaseType::SmallPot].choose(rng).unwrap(),
+        }
+    }
+
+
+    /// Depending on the leaf type, returns one of the leaf appearance characters
+    pub fn get_leaf_string(&self, rng: &mut RNG) -> String {
+        match self.leaf_type {
+            LeafType::Pointy => ["V", "W", "VW", "WVW"].choose(rng).unwrap().to_string(),
+            LeafType::Round => ["&", "o", "0"].choose(rng).unwrap().to_string(),
         }
     }
 }
