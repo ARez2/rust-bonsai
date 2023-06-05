@@ -21,22 +21,13 @@ pub enum LeafType {
 } 
 
 
-/// Defines how a branch looks
-#[derive(Clone, Copy)]
-pub struct BranchShape {
-    /// initial chance to loose width
-    pub width_loose_chance: f32,
-    /// Minimum chance to loose width
-    pub min_width_loose_chance: f32,
-    /// How much percent the width chance looses
-    pub width_loose_ratio: f32,
-}
+
 
 
 /// Defines the appearance of a bonsai tree.
 pub struct TreeAppearance {
     /// How far the leaves extend from the back of a branch
-    pub leaf_count: u8,
+    pub leaf_count: usize,
     /// Which character to use for the leaf
     pub leaf_type: LeafType,
     pub leaf_color: Color,
@@ -46,10 +37,6 @@ pub struct TreeAppearance {
     pub leafshape_y: Point<i16>,
     /// Starting trunk width
     pub trunk_width: u8,
-    /// Shape of the trunk (i.e. width falloff)
-    pub trunk_shape: BranchShape,
-    /// Shape of any branch (i.e. width falloff)
-    pub branch_shape: BranchShape,
     /// Bonus for trunk width
     pub trunk_width_bonus: i16,
     /// Type of base
@@ -82,17 +69,6 @@ impl TreeAppearance {
         };
 
         TreeAppearance {
-            trunk_shape: BranchShape {
-                width_loose_chance: 1.0,
-                min_width_loose_chance: 0.23,
-                width_loose_ratio: 0.8
-            },
-            branch_shape: BranchShape {
-                width_loose_chance: 0.3,
-                min_width_loose_chance: 0.28,
-                width_loose_ratio: 0.8
-            },
-            
             leaf_count: rng.gen_range(1..=3),
             leaf_type,
             leaf_color: *color_arr.choose(rng).unwrap(),

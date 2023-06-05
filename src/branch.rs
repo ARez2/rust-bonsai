@@ -1,19 +1,20 @@
 use crate::{point::Point, RNG};
-use rand::{Rng};
+use rand::{Rng, seq::SliceRandom};
 use simple_simplex::NoiseConfig;
 
 
 /// Direction of a branch
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Direction {
     Up,
     Left,
     Right,
+    RandomHorizontal,
 }
 
 
 /// Defines a step the branch has taken. This is used for drawing
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BonsaiStep {
     /// Current position of the step
     pub pos: Point<i16>,
@@ -24,14 +25,46 @@ pub struct BonsaiStep {
 }
 
 
+/// Defines how a branch looks
+#[derive(Debug, Clone, Copy)]
+pub struct BranchShape {
+    /// initial chance to loose width
+    pub width_loose_chance: f32,
+    /// Minimum chance to loose width
+    pub min_width_loose_chance: f32,
+    /// How much percent the width chance looses
+    pub width_loose_ratio: f32,
+}
+impl BranchShape {
+    pub fn default_trunk() -> BranchShape {
+        BranchShape {
+            width_loose_chance: 1.0,
+            min_width_loose_chance: 0.23,
+            width_loose_ratio: 0.8
+        }
+    }
+
+    pub fn default_branch() -> BranchShape {
+        BranchShape {
+            width_loose_chance: 0.3,
+            min_width_loose_chance: 0.28,
+            width_loose_ratio: 0.8
+        }
+    }
+}
+
+
+#[derive(Debug, Clone)]
 pub struct BonsaiBranch {
     pub steps: Vec<BonsaiStep>,
     pub direction: Direction,
+    pub shape: BranchShape,
 }
+
 
 impl BonsaiBranch {
     /// Creates a new bonsai branch
-    pub fn new(start_pos: Point<i16>, direction: Direction, start_width: u8) -> BonsaiBranch {
+    pub fn new(start_pos: Point<i16>, direction: Direction, start_width: u8, shape: BranchShape) -> BonsaiBranch {
         BonsaiBranch {
             steps: vec![
                 BonsaiStep {
@@ -41,7 +74,37 @@ impl BonsaiBranch {
                 },
             ],
             direction,
+            shape,
         }
+    }
+
+
+    pub fn new_trunk(start_pos: Point<i16>, start_width: u8, randomize_shape: bool, rng: &mut RNG) -> BonsaiBranch {
+        let shape = match randomize_shape {
+            false => BranchShape::default_trunk(),
+            // TODO: Randomize trunk shape
+            true => BranchShape::default_trunk(),
+        };
+        Self::new(start_pos, Direction::Up, start_width, shape)
+    }
+
+
+    pub fn new_branch(start_pos: Point<i16>, start_width: u8, direction: Direction, randomize_shape: bool, rng: &mut RNG) -> BonsaiBranch {
+        let dir = match direction {
+            Direction::RandomHorizontal => {
+                vec![Direction::Left, Direction::Right]
+                    .choose(rng)
+                    .unwrap()
+                    .clone()
+            },
+            _ => direction,
+        };
+        let shape = match randomize_shape {
+            false => BranchShape::default_branch(),
+            // TODO: Randomize branch shape
+            true => BranchShape::default_branch(),
+        };
+        Self::new(start_pos, dir, start_width, shape)
     }
 
 
@@ -98,7 +161,8 @@ impl BonsaiBranch {
                 if self.steps.len() > 3 && rng.gen_bool(0.3) {
                     new_diff.1 -= 1 as i16;
                 };
-            }
+            },
+            _ => ()
         };
 
         let mut new_pos = last_step.pos + Point::<i16>::from(new_diff);

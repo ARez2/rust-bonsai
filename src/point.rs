@@ -2,7 +2,7 @@ use std::{fmt, ops::Add};
 
 
 /// Helpers struct to represent a 2D point
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Point<T: PartialEq + Ord> {
     pub x: T,
     pub y: T,

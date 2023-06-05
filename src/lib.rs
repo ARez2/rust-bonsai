@@ -1,4 +1,4 @@
-use std::{io::{Stdout, Write}, time::Duration, thread};
+use std::{io::{Stdout, Write}, time::Duration, thread, iter::Peekable};
 use crossterm::{style::{Stylize, self, Color}, cursor, queue, execute};
 use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
@@ -8,168 +8,271 @@ use branch::{BonsaiBranch, Direction, BonsaiStep};
 pub mod point;
 use point::Point;
 pub mod appearance;
-use appearance::{TreeAppearance, LeafType, BranchShape, BaseType};
+use appearance::{TreeAppearance, BaseType};
 
 
 const BROWN: Color = Color::Rgb {r: 142, g: 44, b: 19};
 const ROSE: Color = Color::Rgb { r: 252, g: 212, b: 251 };
 type Writer = Stdout;
 pub type RNG = ChaCha8Rng;
+//pub type IterOveru16Point<'a> = std::iter::Rev<std::slice::Iter<'a, Point<i16>>>;
+pub type IterOveru16Point = std::iter::Rev<std::vec::IntoIter<Point<i16>>>;
+
+
+#[derive(Debug, Clone)]
+struct Growstate {
+    pub branch_steps: Peekable<std::vec::IntoIter<BonsaiStep>>,
+    pub branch: Option<BonsaiBranch>,
+    pub last_branch_height: i16,
+    pub last_branch_dir: Direction,
+    pub grow_leaves: Option<IterOveru16Point>,
+    pub num_leaves_left: usize,
+}
+impl Growstate {
+    pub fn grow_leaves_for(branch_steps: Peekable<std::vec::IntoIter<BonsaiStep>>, branch: BonsaiBranch, leaf_positions_count: usize, last_branch_height: i16, last_branch_dir: Direction) -> Self {
+        let leafs: IterOveru16Point = {
+            let mut positions: Vec<Point<i16>> = branch.steps.iter().rev()
+            .filter_map(|step| Some(step.pos))
+            .collect();
+            positions.truncate(leaf_positions_count);
+            positions.into_iter().rev()
+        };
+        
+        Growstate {
+            branch_steps,
+            branch: Some(branch),
+            last_branch_height,
+            last_branch_dir,
+            grow_leaves: Some(leafs),
+            num_leaves_left: 0,
+        }
+    }
+
+    pub fn search_branch_pos(branch_steps: Peekable<std::vec::IntoIter<BonsaiStep>>, last_branch_height: i16, last_branch_dir: Direction) -> Growstate {
+        Growstate {
+            branch_steps,
+            branch: None,
+            last_branch_height,
+            last_branch_dir,
+            grow_leaves: None,
+            num_leaves_left: 0,
+        }
+    }
+
+    pub fn grow_branch(branch_steps: Peekable<std::vec::IntoIter<BonsaiStep>>, branch: &mut BonsaiBranch, last_branch_height: i16, last_branch_dir: Direction) -> Growstate {
+        Growstate {
+            branch_steps,
+            branch: Some(branch.clone()),
+            last_branch_height,
+            last_branch_dir,
+            grow_leaves: None,
+            num_leaves_left: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum TreeState {
+    /// Grow out the bonsai trunk
+    GrowTrunk,
+    /// Grow the branches out of the trunk
+    /// 
+    /// Args: `[<trunk steps iterator>, <current branch>, <last branch height>, <last branch direction>, <grow leaves>, <num leaves left>]`
+    GrowBranches(Growstate),
+}
 
 
 pub struct BonsaiTree {
     pub noise: NoiseConfig,
     pub rng: RNG,
+    pub seed: u64,
     pub stdout: Writer,
     pub width: i16,
     pub height: i16,
     branches: Vec<BonsaiBranch>,
     pub time_multiplier: f32,
     pub appearance: TreeAppearance,
+    current_state: TreeState,
 }
 
 impl BonsaiTree {
     /// Creates a new randomized tree with the given values
-    pub fn new(noise: NoiseConfig, mut rng: RNG, stdout: Writer, width: i16, height: i16, trunk_width: u8) -> BonsaiTree {
+    pub fn new(noise: NoiseConfig, mut rng: RNG, seed: u64, stdout: Writer, width: i16, height: i16, trunk_width: u8) -> BonsaiTree {
         let appearance = TreeAppearance::randomize(&mut rng, trunk_width);
         BonsaiTree {
             noise,
-            branches: vec![],
             rng,
+            seed,
             stdout,
             width,
             height,
+            branches: vec![],
             // Default value, gets overwritten in main.rs by the cmd args
             time_multiplier: 1.0,
             appearance,
+            current_state: TreeState::GrowTrunk,
         }
     }
 
 
-    /// Starts the growing of the tree
-    pub fn grow(&mut self) {
-        let baseheight = self.draw_base();
-        self.grow_trunk(baseheight);
-        self.grow_branches();
-        self.flush();
-    }
+    pub fn step(&mut self) {
+        let state = self.current_state.clone();
+        match state {
+            TreeState::GrowTrunk => {
+                if self.branches.is_empty() {
+                    let baseheight = self.draw_base();
+                    let w = self.appearance.trunk_width;
+                    // Center the tree trunk in the horizontal axis and above the base (plant pot)
+                    let start = Point { x: self.width / 2 - (w as f32 / 2.0 as f32).round() as i16, y: self.height - baseheight as i16};
+                    
+                    let mut trunk = BonsaiBranch::new_trunk(start, w, false, &mut self.rng);
+                    self.step_branch(&mut trunk);
+                    self.branches.push(trunk);
+                }
+                let mut trunk = &mut self.branches[0];
+                if !self.step_branch(trunk) {
+                    self.current_state = TreeState::GrowBranches(
+                        Growstate::grow_leaves_for(
+                            trunk.steps.clone().into_iter().peekable(),
+                            trunk,
+                            self.appearance.leaf_count,
+                            0,
+                            Direction::Up
+                        )
+                    );
+                }
+                //self.branches[0] = trunk;
+            },
+            TreeState::GrowBranches(
+                mut growstate) => {
+                // if there is currently no branch to be grown, find the next position to grow a branch
+                
+                while growstate.branch.is_none() {
+                    let step = growstate.branch_steps.next();
+                    if step.is_none() {
+                        break;
+                    }
+                    let step = step.unwrap();
 
-
-    /// Helper function to draw the trunk
-    pub fn grow_trunk(&mut self, baseheight: usize) {
-        let w = self.appearance.trunk_width;
-        // Center the tree trunk in the horizontal axis and above the base (plant pot)
-        let start = Point { x: self.width / 2 - (w as f32 / 2.0 as f32).round() as i16, y: self.height - baseheight as i16};
-        self.grow_branch(start, Direction::Up, w, self.appearance.trunk_shape);
-    }
-
-
-    /// Helper function to draw all the other branches
-    pub fn grow_branches(&mut self) {
-        if self.branches.is_empty() {
-            return;
-        };
-        let trunk_steps = self.branches[0].steps.clone();
-        let mut last_branch_height = 0;
-        let mut last_branch_dir = Direction::Up;
-        for step in trunk_steps {
-            let mut ratio = 1.0 - (step.pos.y as f32 / (self.height - 1) as f32);
-            if ratio < 0.0 {
-                ratio = 0.0;
-            } else if ratio > 1.0 {
-                ratio = 1.0;
-            };
-            
-            let dir = vec![Direction::Left, Direction::Right]
-                .choose(&mut self.rng)
-                .unwrap()
-                .clone();
-            let default_width = 2;
-            let min_ratio = 0.35;
-            // Only spawn branch if it has some distance to the other branches and its towards the top
-            if (dir == last_branch_dir && (step.pos.y - last_branch_height).abs() > default_width) || (dir != last_branch_dir && ratio > min_ratio && self.rng.gen_bool(ratio as f64)) {
-                let mut b_width = default_width;
-                if step.width <= 2 {
-                    b_width = 1;
+                    let mut ratio = 1.0 - (step.pos.y as f32 / (self.height - 1) as f32);
+                    ratio = ratio.clamp(0.0, 1.0);
+                    
+                    let dir = vec![Direction::Left, Direction::Right]
+                        .choose(&mut self.rng)
+                        .unwrap()
+                        .clone();
+                    let min_width_between_branches = 2;
+                    let min_ratio = 0.35;
+                    // Only spawn branch if it has some distance to the other branches and its towards the top
+                    if (dir == growstate.last_branch_dir && (step.pos.y - growstate.last_branch_height).abs() > min_width_between_branches) || (dir != growstate.last_branch_dir && ratio > min_ratio && self.rng.gen_bool(ratio as f64)) {
+                        let mut b_width = min_width_between_branches;
+                        if step.width <= 2 {
+                            b_width = 1;
+                        };
+                        
+                        let mut branch = BonsaiBranch::new_branch(step.pos, b_width as u8, dir.clone(), false, &mut self.rng);
+                        self.current_state = TreeState::GrowBranches(Growstate::grow_branch(growstate.branch_steps.clone(), &mut branch, step.pos.y, dir));
+                        self.branches.push(branch);
+                    }
+                }
+                let branch = match &self.current_state {
+                    TreeState::GrowBranches(growstate) => growstate.branch.clone(),
+                    _ => None,
                 };
-                self.grow_branch(step.pos, dir.clone(), b_width as u8, self.appearance.branch_shape);
-                last_branch_height = step.pos.y;
-                last_branch_dir = dir;
-            };
-        };
+                
+                // if we are currently growing a branch, grow/ step that branch
+                if let Some(mut branch) = branch {
+                    // If the branch should now grow leaves
+                    if growstate.grow_leaves.is_some() {
+                        let mut leaf_positions = growstate.grow_leaves.unwrap();
+                        //println!("Grow leaves: {:?}, Leaves left: {}", leaf_positions, growstate.num_leaves_left);
+                        let leaf_pos = match growstate.num_leaves_left {
+                            0 => {
+                                growstate.num_leaves_left = self.get_num_leaves();
+                                //self.draw((1, 1), "                                                                                        ", Color::Red);
+                                //self.draw((1, 1), "Getting next leaf", Color::Red);
+                                leaf_positions.next()
+                            },
+                            _ => {
+                                //self.draw((1, 1), "                                                                                        ", Color::Red);
+                                //self.draw((1, 1), format!("Getting existing leaf {:?}", leaf_positions.clone().collect::<Vec<Point<i16>>>()).as_str(), Color::Red);
+                                leaf_positions.nth(0)
+                            },
+                        };
+
+                        //println!("Grow leaves leaf pos: {:?}", leaf_pos);
+                        if let Some(pos) = leaf_pos {
+                            let leaf = &self.appearance.get_leaf_string(&mut self.rng);
+                            
+                            let rand_x = self.rng.gen_range(-self.appearance.leafshape_x.x..=self.appearance.leafshape_x.y);
+                            let rand_y = self.rng.gen_range(-self.appearance.leafshape_y.x..=self.appearance.leafshape_y.y);
+                            let mut new_pos = pos + Point::from((rand_x, rand_y));
+                            new_pos.x = std::cmp::max(3, new_pos.x);
+                            new_pos.y = std::cmp::max(3, new_pos.y);
+                            self.draw((new_pos.x as u16, new_pos.y as u16), leaf, self.appearance.leaf_color);
+                            
+                            self.current_state = TreeState::GrowBranches(Growstate {
+                                branch_steps: growstate.branch_steps,
+                                branch: growstate.branch,
+                                last_branch_height: growstate.last_branch_height,
+                                last_branch_dir: growstate.last_branch_dir,
+                                grow_leaves: Some(leaf_positions),
+                                num_leaves_left: growstate.num_leaves_left - 1,
+                            })
+                        } else {
+                            // if all leaves have been grown, go back to searching for a new branch position
+                            self.current_state = TreeState::GrowBranches(Growstate::search_branch_pos(growstate.branch_steps, growstate.last_branch_height, growstate.last_branch_dir))
+                        }
+                    } else {
+                        let did_grow = self.step_branch(&mut branch);
+                        // Branch finished growing, now grow leaves
+                        if !did_grow {
+                            self.current_state = TreeState::GrowBranches(
+                                Growstate::grow_leaves_for(
+                                    growstate.branch_steps,
+                                    branch,
+                                    self.appearance.leaf_count,
+                                    growstate.last_branch_height,
+                                    growstate.last_branch_dir
+                                )
+                            );
+                        } else {
+                            // continue growing
+                            self.current_state = TreeState::GrowBranches(Growstate::grow_branch(growstate.branch_steps, &mut branch, growstate.last_branch_height, growstate.last_branch_dir))
+                        }
+                    }
+                }
+            },
+        }
+
+        let seed_draw_height = self.height.saturating_sub(2);
+        self.draw((1, seed_draw_height as u16), format!("Seed: {}", self.seed).as_str(), Color::DarkGrey);
+        self.flush();
     }
 
 
     /// The core of the program. Basically every part of the bonsai tree is handled as a branch
     /// with a direction (even the trunk)
-    pub fn grow_branch(
-        &mut self,
-        start_pos: Point<i16>,
-        direction: Direction,
-        start_width: u8,
-        mut shape: BranchShape,
-    ) {
-        let mut branch = BonsaiBranch::new(start_pos, direction.clone(), start_width);
-
-        // Simulate the branch growing and handle the width of the branch using the given shape
-        for i in (0..self.height - 3).rev() {
-            let last_steppos = branch.steps.last().unwrap().pos;
-            let ratio = match direction {
-                Direction::Up =>  1.0 - (last_steppos.y as f32 / (self.height - 1) as f32),
-                Direction::Left =>  1.0 - (last_steppos.x as f32 / (self.width - 1) as f32),
-                Direction::Right =>  (last_steppos.x as f32 / (self.width - 1) as f32),
-            };
-            //let ratio = 1.0 - (branch.steps.last().unwrap().pos.y as f32 / (self.height - 1) as f32);
-            let did_grow = branch.step(&self.noise, &mut self.rng, shape.width_loose_chance, ratio);
-            if shape.width_loose_chance > shape.min_width_loose_chance {
-                shape.width_loose_chance *= shape.width_loose_ratio;
-            } else {
-                shape.width_loose_chance = shape.min_width_loose_chance;
-            }
-            shape.width_loose_chance = (shape.width_loose_chance * 10.0).round() / 10.0;
-
-            self.draw_step(branch.steps.last().unwrap(), direction.clone());
-            self.flush();
-            if did_grow && i > 2 {
-                thread::sleep(Duration::from_millis((100 as f32 * self.time_multiplier).round() as u64));
-            } else if !did_grow {
-                break;
-            };
+    pub fn step_branch(&mut self, branch: &mut BonsaiBranch) -> bool {
+        let last_steppos = branch.steps.last().unwrap().pos;
+        let ratio = match branch.direction {
+            Direction::Up =>  1.0 - (last_steppos.y as f32 / (self.height - 1) as f32),
+            Direction::Left =>  1.0 - (last_steppos.x as f32 / (self.width - 1) as f32),
+            Direction::Right =>  last_steppos.x as f32 / (self.width - 1) as f32,
+            _ => 0.0,
         };
-        
-        self.grow_leaves(&branch);
-        self.branches.push(branch);
-    }
 
-
-    /// Grows/ draws a bunch of leaves at the last few points of a branch
-    pub fn grow_leaves(&mut self, branch: &BonsaiBranch) {
-        let mut positions: Vec<Point<i16>> = branch.steps.iter()
-            .filter_map(|step| Some(step.pos))
-            .collect();
-        let mut leaf_positions = vec![];
-        for pos in positions.iter().rev() {
-            if leaf_positions.len() > self.appearance.leaf_count as usize {
-                break;
-            };
-            leaf_positions.push(pos.clone());
-        };
-        for pos in leaf_positions.iter().rev() {
-            let leaf = &self.appearance.get_leaf_string(&mut self.rng);
-
-            self.draw((pos.x as u16, pos.y as u16), leaf, self.appearance.leaf_color);
-            let num_leaves = self.rng.gen_range(5..=10+(3 * self.appearance.trunk_width_bonus));
-            for _ in 0..num_leaves {
-                let rand_x = self.rng.gen_range(-self.appearance.leafshape_x.x..=self.appearance.leafshape_x.y);
-                let rand_y = self.rng.gen_range(-self.appearance.leafshape_y.x..=self.appearance.leafshape_y.y);
-                let mut new_pos = *pos + Point::from((rand_x, rand_y));
-                new_pos.x = std::cmp::max(3, new_pos.x);
-                new_pos.y = std::cmp::max(3, new_pos.y);
-                self.draw((new_pos.x as u16, new_pos.y as u16), leaf, self.appearance.leaf_color);
-            };
-            self.flush();
-            thread::sleep(Duration::from_millis((50 as f32 * self.time_multiplier).round() as u64));
+        let did_grow = branch.step(&self.noise, &mut self.rng, branch.shape.width_loose_chance, ratio);
+        if branch.shape.width_loose_chance > branch.shape.min_width_loose_chance {
+            branch.shape.width_loose_chance *= branch.shape.width_loose_ratio;
+        } else {
+            branch.shape.width_loose_chance = branch.shape.min_width_loose_chance;
         }
+        branch.shape.width_loose_chance = (branch.shape.width_loose_chance * 10.0).round() / 10.0;
+
+        self.draw_step(branch.steps.last().unwrap(), branch.direction.clone());
+
+        did_grow
     }
 
 
@@ -198,6 +301,13 @@ impl BonsaiTree {
             result.push(*set.choose(&mut self.rng).unwrap_or(&'?'));
         };
         result
+    }
+
+
+    pub fn get_num_leaves(&mut self) -> usize {
+        let l = self.rng.gen_range(5..=10+(3 * self.appearance.trunk_width_bonus)) as usize;
+        //println!("get_num_leaves: {}", l);
+        l
     }
 
 
