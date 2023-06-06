@@ -112,6 +112,7 @@ fn grow_bonsai(args: Args, stdout: Writer) -> BonsaiTree {
     BonsaiTree::new(
         noise,
         rng,
+        seed,
         stdout,
         width as i16,
         height as i16,

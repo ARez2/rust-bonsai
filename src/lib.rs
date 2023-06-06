@@ -20,6 +20,7 @@ pub type Writer = std::io::BufWriter<std::io::Stdout>;
 pub struct BonsaiTree {
     pub noise: NoiseConfig,
     pub rng: RNG,
+    seed: u64,
     pub stdout: Writer,
     pub width: i16,
     pub height: i16,
@@ -29,7 +30,7 @@ pub struct BonsaiTree {
 
 impl BonsaiTree {
     /// Creates a new randomized tree with the given values
-    pub fn new(noise: NoiseConfig, mut rng: RNG, stdout: Writer, width: i16, height: i16, trunk_width: usize) -> BonsaiTree {
+    pub fn new(noise: NoiseConfig, mut rng: RNG, seed: u64, stdout: Writer, width: i16, height: i16, trunk_width: usize) -> BonsaiTree {
         let appearance = TreeAppearance::randomize(&mut rng, trunk_width);
         
         let baseheight = appearance.get_base(4).lines().count();
@@ -53,6 +54,7 @@ impl BonsaiTree {
             noise,
             branches,
             rng,
+            seed,
             stdout,
             width,
             height,
@@ -112,15 +114,8 @@ impl BonsaiTree {
         //println!("{}", self.branches.len());
         
         if did_grow {
+            draw(&mut self.stdout, (1, self.height as u16 - 2), format!("Seed: {}", self.seed).as_str(), Color::DarkGrey);
             self.flush();
-            //let content = self.stdout.clone().into_inner();
-            //self.stdout.write_all(&content).unwrap();
-            //let string = String::from_utf8(content).unwrap();
-            //std::io::stdout().write_all(&content).unwrap();
-            //let mut out = std::io::stdout().lock();
-            //execute!(out, Clear(crossterm::terminal::ClearType::All)).unwrap();
-            //out.write_all(&content).unwrap();
-            //println!("{}", string);
         }
     }
 
