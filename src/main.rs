@@ -1,4 +1,4 @@
-use std::{u64::MAX, time::{Duration, Instant}, io::{Cursor, Write}};
+use std::{u64::MAX, time::{Duration, Instant}, io::{Cursor, Write, BufWriter}};
 use bonsai::{BonsaiTree, Writer};
 use crossterm::{execute, terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen}, cursor, style::{Color, self, Stylize}, event::{poll, read, Event, KeyCode, KeyModifiers, EnableMouseCapture}};
 use rand::{Rng, SeedableRng, rngs::ThreadRng};
@@ -24,19 +24,25 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let buffer = Cursor::new(Vec::<u8>::new());
-    let mut tree = grow_bonsai(args, buffer.clone());
+    let tree_stdout = BufWriter::new(std::io::stdout());
+    let mut tree = grow_bonsai(args, tree_stdout);
     
-    //execute!(std::io::stdout(), Clear(ClearType::All)).unwrap();
     let mut stdout = std::io::stdout();
-    crossterm::execute!(stdout, EnterAlternateScreen).unwrap();
-    crossterm::terminal::enable_raw_mode().unwrap();
-    execute!(stdout, EnableMouseCapture).unwrap();
+    execute!(stdout, Clear(ClearType::All)).unwrap();
+    //crossterm::execute!(stdout, EnterAlternateScreen).unwrap();
+    //crossterm::terminal::enable_raw_mode().unwrap();
+    //execute!(stdout, EnableMouseCapture).unwrap();
 
     let mut last_step = Instant::now();
     loop {
         let time_since_last_step = last_step.elapsed();
-        
+        if time_since_last_step > Duration::from_millis(args.time_scale) {
+            //, 
+            //execute!(stdout, crossterm::terminal::BeginSynchronizedUpdate).unwrap();
+            tree.step();
+            last_step = Instant::now();
+            //execute!(stdout, crossterm::terminal::EndSynchronizedUpdate).unwrap();
+        }
         
         if poll(Duration::from_millis(0)).unwrap() {
             // It's guaranteed that the `read()` won't block when the `poll()`
@@ -51,8 +57,8 @@ fn main() {
                     match event.code {
                         KeyCode::Esc => break,
                         KeyCode::Char('r') => {
-                            crossterm::execute!(std::io::stdout(), Clear(ClearType::All)).unwrap();
-                            tree = grow_bonsai(args, buffer.clone());
+                            crossterm::execute!(stdout, Clear(ClearType::All)).unwrap();
+                            tree = grow_bonsai(args, tree.stdout);
                         },
                         _ => println!("{:?}", event),
                     }
@@ -66,14 +72,11 @@ fn main() {
         } else {
             
         }
-        //crossterm::execute!(std::io::stdout(), Clear(ClearType::All)).unwrap();
-        if time_since_last_step > Duration::from_millis(args.time_scale) {
-            tree.step();
-            last_step = Instant::now();
-        }
     }
+    crossterm::execute!(std::io::stdout(), cursor::MoveTo(0, 0)).unwrap();
     crossterm::terminal::disable_raw_mode().unwrap();
-    crossterm::execute!(stdout, LeaveAlternateScreen).unwrap();
+    crossterm::execute!(std::io::stdout(), Clear(ClearType::All)).unwrap();
+    //crossterm::execute!(stdout, LeaveAlternateScreen).unwrap();
 }
 
 

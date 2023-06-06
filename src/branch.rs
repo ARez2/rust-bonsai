@@ -121,7 +121,7 @@ impl BonsaiBranch {
     pub fn step(&mut self, noise: &NoiseConfig, rng: &mut RNG, screen_dimensions: (i16, i16), stdout: &mut Writer) -> bool {
         let last_step = self.steps.last().unwrap();
         if last_step.width < 1 {
-            return false;
+            //return false;
             if self.leaves.len() >= self.max_leaf_positions && {
                 let last = self.leaves.last().unwrap();
                 last.1.len() >= last.0
@@ -155,7 +155,7 @@ impl BonsaiBranch {
                     self.leaves.push((num_leaves, vec![], (extents_min, extents_max)));
                 });
             }
-            //self.grow_leaf(rng, stdout);
+            self.grow_leaf(rng, stdout);
             return true;
         };
 

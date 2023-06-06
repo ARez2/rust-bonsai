@@ -1,5 +1,5 @@
 use std::{io::{Write}};
-use crossterm::{style::{Stylize, self, Color}, cursor, queue, execute};
+use crossterm::{style::{Stylize, self, Color}, cursor, queue, execute, terminal::Clear};
 use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaCha8Rng;
 use simple_simplex::NoiseConfig;
@@ -14,7 +14,7 @@ use appearance::{TreeAppearance};
 const BROWN: Color = Color::Rgb {r: 142, g: 44, b: 19};
 const ROSE: Color = Color::Rgb { r: 252, g: 212, b: 251 };
 pub type RNG = ChaCha8Rng;
-pub type Writer = std::io::Cursor<Vec<u8>>;
+pub type Writer = std::io::BufWriter<std::io::Stdout>;
 
 
 pub struct BonsaiTree {
@@ -64,6 +64,7 @@ impl BonsaiTree {
     pub fn step(&mut self) {
         let mut max_branch_height = 0;
         let mut max_branch_dir = Direction::Up;
+        let mut did_grow = false;
         for (idx, branch) in self.branches.iter_mut().enumerate() {
             if idx > 0 && branch.steps[0].pos.y > max_branch_height {
                 max_branch_height = branch.steps[0].pos.y;
@@ -74,6 +75,9 @@ impl BonsaiTree {
                 &mut self.rng,
                 (self.width, self.height),
                 &mut self.stdout);
+            if g {
+                did_grow = true;
+            }
         }
         let last_trunk_step = self.branches[0].steps.last().unwrap();
         let mut ratio = 1.0 - (last_trunk_step.pos.y as f32 / (self.height - 1) as f32);
@@ -106,11 +110,18 @@ impl BonsaiTree {
             );
         }
         //println!("{}", self.branches.len());
-        //self.flush();
-        let content = self.stdout.clone().into_inner();
-        //let string = String::from_utf8(content).unwrap();
         
-        std::io::stdout().write_all(&content).unwrap();
+        if did_grow {
+            self.flush();
+            //let content = self.stdout.clone().into_inner();
+            //self.stdout.write_all(&content).unwrap();
+            //let string = String::from_utf8(content).unwrap();
+            //std::io::stdout().write_all(&content).unwrap();
+            //let mut out = std::io::stdout().lock();
+            //execute!(out, Clear(crossterm::terminal::ClearType::All)).unwrap();
+            //out.write_all(&content).unwrap();
+            //println!("{}", string);
+        }
     }
 
 
